@@ -5,15 +5,15 @@ import os
 import os.path
 import re
 from tempfile import NamedTemporaryFile
-from typing import Any, Dict, List, Optional, IO
+from typing import IO, Any, Dict, List, Optional
 
 from mypy import api as mypy_api
-# from mypy.defaults import CONFIG_FILES
+from mypy.defaults import CONFIG_FILES as MYPY_CONFIG_FILES
 from pylsp import hookimpl
 from pylsp.config.config import Config
 from pylsp.workspace import Document, Workspace
 
-line_pattern: str = r"((?:^[a-z]:)?[^:]+):(?:(\d+):)?(?:(\d+):)? (\w+): (.*)"
+line_pattern = re.compile(r"((?:^[a-z]:)?[^:]+):(?:(\d+):)?(?:(\d+):)? (\w+): (.*)")
 
 logger = logging.getLogger(__name__)
 
@@ -28,42 +28,13 @@ map_document_tmpfile: Dict[str, IO[str]] = collections.defaultdict(
 # so store a cache of last diagnostics for each file a-la the pylint plugin,
 # so we can return some potentially-stale diagnostics.
 # https://github.com/python-lsp/python-lsp-server/blob/v1.0.1/pylsp/plugins/pylint_lint.py#L55-L62
-last_diagnostics: Dict[str, List] = collections.defaultdict(list)
+last_diagnostics: Dict[str, List[Any]] = collections.defaultdict(list)
 
 
-def find_config_file(path: str, name: str) -> Optional[str]:
-    while True:
-        p = f"{path}/{name}"
-        if os.path.isfile(p):
-            return p
-        else:
-            loc = path.rfind("/")
-            if loc == -1:
-                return None
-            path = path[:loc]
-
-
-def parse_line(line: str, document: Optional[Document] = None) -> Optional[Dict[str, Any]]:
-    """
-    Return a language-server diagnostic from a line of the Mypy error report.
-
-    optionally, use the whole document to provide more context on it.
-
-
-    Parameters
-    ----------
-    line : str
-        Line of mypy output to be analysed.
-    document : Optional[Document], optional
-        Document in wich the line is found. The default is None.
-
-    Returns
-    -------
-    Optional[Dict[str, Any]]
-        The dict with the lint data.
-
-    """
-    result = re.match(line_pattern, line)
+def parse_line(
+    line: str, document: Optional[Document] = None
+) -> Optional[Dict[str, Any]]:
+    result = line_pattern.match(line)
     logger.info(line)
     if result:
         file_path, linenoStr, offsetStr, severity, msg = result.groups()
@@ -72,7 +43,9 @@ def parse_line(line: str, document: Optional[Document] = None) -> Optional[Dict[
             # results from other files can be included, but we cannot return
             # them.
             if document and document.path and not document.path.endswith(file_path):
-                logger.warning("discarding result for %s against %s", file_path, document.path)
+                logger.warning(
+                    "discarding result for %s against %s", file_path, document.path
+                )
                 return None
 
         lineno = int(linenoStr or 1) - 1  # 0-based line number
@@ -95,36 +68,44 @@ def parse_line(line: str, document: Optional[Document] = None) -> Optional[Dict[
             # can make a good guess by highlighting the word that Mypy flagged
             word = document.word_at_position(diag["range"]["start"])
             if word:
-                diag["range"]["end"]["character"] = diag["range"]["start"]["character"] + len(word)
+                diag["range"]["end"]["character"] = diag["range"]["start"][
+                    "character"
+                ] + len(word)
 
         return diag
     return None
 
 
 @hookimpl
-def pylsp_settings(config):
+def pylsp_settings(config: Config) -> Dict[str, Any]:
     # Check for mypy config file to be used
-    logger.info("PASSING BY SETTINGS")
     global mypy_config_file
     if not mypy_config_file:
         workspace = config._root_path
         logger.info(f"Searching for mypy config file from {workspace}")
-        for filepath in ["mypy.ini", ".mypy.ini", "setup.cfg", "pyproject.toml"]:
-            mypy_config_file = find_config_file(workspace, filepath)
-            if mypy_config_file:
+        for filepath in MYPY_CONFIG_FILES:
+            location = os.path.join(workspace, filepath)
+            if os.path.isfile(location):
+                mypy_config_file = location
                 logger.info(f"Found mypy config file at {mypy_config_file}")
                 break
 
     return {
         "plugins": {
-            "pylsp_mypy_rnx": {"enabled": True, "live_mode": True, "dmypy": False, "args": []}
+            "pylsp_mypy_rnx": {
+                "enabled": True,
+                "live_mode": True,
+                "dmypy": False,
+                "args": [],
+            }
         }
     }
 
 
 @hookimpl
-def pylsp_lint(workspace: Workspace, document: Document) -> List[Dict[str, Any]]:
-    logger.info("PASSING BY LINT")
+def pylsp_lint(
+    workspace: Workspace, document: Document, is_saved: bool
+) -> List[Dict[str, Any]]:
     config = workspace._config
     settings = config.plugin_settings("pylsp_mypy_rnx", document_path=document.path)
     logger.info(f"lint settings: {settings}")
@@ -142,20 +123,23 @@ def pylsp_lint(workspace: Workspace, document: Document) -> List[Dict[str, Any]]
     args = settings["args"]
     args = [*args, "--show-column-numbers"]
 
-    if live_mode:
-        tmpfile = map_document_tmpfile[document.source]
-        logger.info(f"live_mode for document.path = {document.path} with tmpfile = {tmpfile.name}")
-        with open(tmpfile.name, "w") as f:
-            f.write(document.source)
+    if not is_saved:
+        if live_mode:
+            tmpfile = map_document_tmpfile[document.source]
+            logger.info(f"live_mode with tmpfile = {tmpfile.name}")
+            with open(tmpfile.name, "w") as f:
+                f.write(document.source)
 
-        args.extend(["--shadow-file", document.path, tmpfile.name])
+            args.extend(["--shadow-file", document.path, tmpfile.name])
 
-    elif document.path in last_diagnostics:
-        # On-launch the document isn't marked as saved, so fall through and run
-        # the diagnostics anyway even if the file contents may be out of date.
-        last_diags = last_diagnostics[document.path]
-        logger.info(f"non-live, returning cached diagnostics len(cached) = {last_diags}")
-        return last_diags
+        elif document.path in last_diagnostics:
+            # On-launch the document isn't marked as saved, so fall through and run
+            # the diagnostics anyway even if the file contents may be out of date.
+            last_diags = last_diagnostics[document.path]
+            logger.info(
+                f"non-live, returning cached diagnostics len(cached) = {len(last_diags)}"
+            )
+            return last_diags
 
     if mypy_config_file:
         args.append("--config-file")
