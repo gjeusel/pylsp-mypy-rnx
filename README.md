@@ -18,4 +18,5 @@ pip install pylsp-mypy-rnx
 ```bash
 poetry install
 poetry run pre-commit install -t pre-push
+poetry run pytest
 ```
