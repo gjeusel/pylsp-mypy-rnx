@@ -1,3 +1,4 @@
+from typing import Any, Dict
 from unittest.mock import Mock
 
 import pytest
@@ -62,7 +63,7 @@ def test_plugin(workspace):
 
 def test_parse_full_line(workspace):
     doc = Document(DOC_URI, workspace)
-    diag = plugin.parse_line(TEST_LINE, doc)
+    diag: Dict[str, Any] = plugin.parse_line(TEST_LINE, doc)
     assert diag["message"] == '"Request" has no attribute "id"'
     assert diag["range"]["start"] == {"line": 278, "character": 7}
     assert diag["range"]["end"] == {"line": 278, "character": 8}
@@ -70,7 +71,7 @@ def test_parse_full_line(workspace):
 
 def test_parse_line_without_col(workspace):
     doc = Document(DOC_URI, workspace)
-    diag = plugin.parse_line(TEST_LINE_WITHOUT_COL, doc)
+    diag: Dict[str, Any] = plugin.parse_line(TEST_LINE_WITHOUT_COL, doc)
     assert diag["message"] == '"Request" has no attribute "id"'
     assert diag["range"]["start"] == {"line": 278, "character": 0}
     assert diag["range"]["end"] == {"line": 278, "character": 1}
