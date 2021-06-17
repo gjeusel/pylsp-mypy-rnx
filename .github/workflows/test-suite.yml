@@ -90,6 +90,7 @@ jobs:
         run: poetry run pytest --cov=pylsp_mypy_rnx --cov-report=xml
 
       - name: "Upload coverage"
+        # requires CODECOV_TOKEN in repository secrets
         uses: codecov/codecov-action@v1
         with:
           file: ./coverage.xml
