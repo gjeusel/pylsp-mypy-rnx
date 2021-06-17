@@ -1,7 +1,7 @@
 {
   "template": "/Users/gjeusel/src/soft-cookiecutter",
-  "commit": "017019b070d99358b57a4e925123f9236303a015",
-  "checkout": "add-poetry",
+  "commit": "cccc0be209106cfae2a56c4675ec3a2091dc636f",
+  "checkout": null,
   "context": {
     "cookiecutter": {
       "github_username": "gjeusel",
