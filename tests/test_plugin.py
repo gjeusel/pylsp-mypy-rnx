@@ -1,4 +1,3 @@
-from typing import Any, Dict
 from unittest.mock import Mock
 
 import pytest
@@ -63,15 +62,15 @@ def test_plugin(workspace):
 
 def test_parse_full_line(workspace):
     doc = Document(DOC_URI, workspace)
-    diag: Dict[str, Any] = plugin.parse_line(TEST_LINE, doc)
-    assert diag["message"] == '"Request" has no attribute "id"'
-    assert diag["range"]["start"] == {"line": 278, "character": 7}
-    assert diag["range"]["end"] == {"line": 278, "character": 8}
+    diag = plugin.parse_line(TEST_LINE, doc)
+    assert diag["message"] == '"Request" has no attribute "id"'  # type: ignore
+    assert diag["range"]["start"] == {"line": 278, "character": 7}  # type: ignore
+    assert diag["range"]["end"] == {"line": 278, "character": 8}  # type: ignore
 
 
 def test_parse_line_without_col(workspace):
     doc = Document(DOC_URI, workspace)
-    diag: Dict[str, Any] = plugin.parse_line(TEST_LINE_WITHOUT_COL, doc)
-    assert diag["message"] == '"Request" has no attribute "id"'
-    assert diag["range"]["start"] == {"line": 278, "character": 0}
-    assert diag["range"]["end"] == {"line": 278, "character": 1}
+    diag = plugin.parse_line(TEST_LINE_WITHOUT_COL, doc)
+    assert diag["message"] == '"Request" has no attribute "id"'  # type: ignore
+    assert diag["range"]["start"] == {"line": 278, "character": 0}  # type: ignore
+    assert diag["range"]["end"] == {"line": 278, "character": 1}  # type: ignore
