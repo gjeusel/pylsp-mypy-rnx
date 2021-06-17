@@ -36,44 +36,45 @@ def parse_line(
 ) -> Optional[Dict[str, Any]]:
     result = line_pattern.match(line)
     logger.info(line)
-    if result:
-        file_path, linenoStr, offsetStr, severity, msg = result.groups()
+    if not result:
+        return None
 
-        if file_path != "<string>":  # live mode
-            # results from other files can be included, but we cannot return
-            # them.
-            if document and document.path and not document.path.endswith(file_path):
-                logger.warning(
-                    "discarding result for %s against %s", file_path, document.path
-                )
-                return None
+    file_path, linenoStr, offsetStr, severity, msg = result.groups()
 
-        lineno = int(linenoStr or 1) - 1  # 0-based line number
-        offset = int(offsetStr or 1) - 1  # 0-based offset
-        errno = 2
-        if severity == "error":
-            errno = 1
-        diag: Dict[str, Any] = {
-            "source": "mypy",
-            "range": {
-                "start": {"line": lineno, "character": offset},
-                # There may be a better solution, but mypy does not provide end
-                "end": {"line": lineno, "character": offset + 1},
-            },
-            "message": msg,
-            "severity": errno,
-        }
-        if document:
-            # although mypy does not provide the end of the affected range, we
-            # can make a good guess by highlighting the word that Mypy flagged
-            word = document.word_at_position(diag["range"]["start"])
-            if word:
-                diag["range"]["end"]["character"] = diag["range"]["start"][
-                    "character"
-                ] + len(word)
+    if file_path != "<string>":  # live mode
+        # results from other files can be included, but we cannot return them.
+        if document and document.path and not document.path.endswith(file_path):
+            msg = f"discarding result for {file_path} against {document.path}"
+            logger.warning(msg)
+            return None
 
-        return diag
-    return None
+    lineno = int(linenoStr or 1) - 1  # 0-based line number
+    offset = int(offsetStr or 1) - 1  # 0-based offset
+    errno = 1 if severity == "error" else 2
+
+    range_diag = {
+        "start": {"line": lineno, "character": offset},
+        # There may be a better solution, but mypy does not provide end
+        "end": {"line": lineno, "character": offset + 1},
+    }
+
+    diag: Dict[str, Any] = {
+        "source": "mypy",
+        "range": range_diag,
+        "message": msg,
+        "severity": errno,
+    }
+
+    if document:
+        # although mypy does not provide the end of the affected range, we
+        # can make a good guess by highlighting the word that Mypy flagged
+        word = document.word_at_position(diag["range"]["start"])
+        if word:
+            diag["range"]["end"]["character"] = diag["range"]["start"][
+                "character"
+            ] + len(word)
+
+    return diag
 
 
 @hookimpl
