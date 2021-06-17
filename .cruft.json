@@ -1,6 +1,6 @@
 {
   "template": "/Users/gjeusel/src/soft-cookiecutter",
-  "commit": "b9768934301f8171b5299ce5acbd1640e37f0691",
+  "commit": "6e580b1feeb6f2b1aad21b68a6da5ca91b7af1c9",
   "checkout": null,
   "context": {
     "cookiecutter": {
@@ -8,7 +8,6 @@
       "project_name": "pylsp-mypy-rnx",
       "project_slug": "pylsp_mypy_rnx",
       "project_short_description": "mypy-ls fork",
-      "pypi_username": "gjeusel",
       "mkdocs": "no",
       "tool": "poetry",
       "open_source_license": "MIT license",
