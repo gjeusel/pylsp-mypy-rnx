@@ -7,7 +7,46 @@ on:
     types: [opened, synchronize]
 
 jobs:
-  tests:
+  linting:
+    name: "Python Linting"
+    runs-on: "ubuntu-latest"
+
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: "Checkout Code"
+        uses: actions/checkout@v2
+
+      - name: "setup python"
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.9"
+      - name: "Install and configure Poetry"
+        uses: snok/install-poetry@v1.1.6
+        with:
+          version: 1.2.0a1
+          virtualenvs-create: true
+          virtualenvs-in-project: false
+
+      - name: "Load cached venv"
+        id: cached-poetry-dependencies
+        uses: actions/cache@v2
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: "Install dependencies"
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+
+      - name: "Install libraries"
+        run: poetry install --no-interaction
+
+      - name: "Run linting"
+        run: poetry run pre-commit run --all-files
+
+  pytest:
     name: "Python ${{ matrix.python-version }}"
     runs-on: "ubuntu-latest"
 
@@ -49,9 +88,6 @@ jobs:
 
       - name: "Run tests"
         run: poetry run pytest --cov=pylsp_mypy_rnx --cov-report=xml
-
-      - name: "Run linting"
-        run: poetry run pre-commit run --all-files
 
       - name: "Upload coverage"
         uses: codecov/codecov-action@v1
