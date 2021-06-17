@@ -137,9 +137,8 @@ def pylsp_lint(
             # On-launch the document isn't marked as saved, so fall through and run
             # the diagnostics anyway even if the file contents may be out of date.
             last_diags = last_diagnostics[document.path]
-            logger.info(
-                f"non-live, returning cached diagnostics len(cached) = {len(last_diags)}"
-            )
+            msg = f"non-live, returning cached diagnostics ({len(last_diags)})"
+            logger.info(msg)
             return last_diags
 
     if mypy_config_file:
