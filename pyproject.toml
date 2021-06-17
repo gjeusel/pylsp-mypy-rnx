@@ -33,6 +33,7 @@ classifiers = [
 
 [tool.poetry.dependencies]
 python = "~3.9 || ~3.8"
+python-lsp-server = "^1.0"
 
 [tool.poetry.dev-dependencies]
 # Linting / Formatters
