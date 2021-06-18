@@ -22,6 +22,7 @@ pip install pylsp-mypy-rnx
 
 
 ## Develop
+
 ```bash
 poetry install
 poetry run pre-commit install -t pre-push
