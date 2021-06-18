@@ -7,6 +7,7 @@ import re
 from tempfile import NamedTemporaryFile
 from typing import IO, Any, Dict, List, Optional
 
+import mypy
 from mypy import api as mypy_api
 from mypy.defaults import CONFIG_FILES as MYPY_CONFIG_FILES
 from pylsp import hookimpl
@@ -16,6 +17,7 @@ from pylsp.workspace import Document, Workspace
 line_pattern = re.compile(r"((?:^[a-z]:)?[^:]+):(?:(\d+):)?(?:(\d+):)? (\w+): (.*)")
 
 logger = logging.getLogger(__name__)
+logger.info(f"Using mypy located at: {mypy.__file__}")
 
 mypy_config_file: Optional[str] = None
 
