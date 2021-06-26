@@ -98,8 +98,10 @@ def pylsp_settings(config: Config) -> Dict[str, Any]:
             "pylsp_mypy_rnx": {
                 "enabled": True,
                 "live_mode": True,
-                "dmypy": False,
                 "args": [],
+                "dmypy": False,
+                "dmypy_args": [],
+                "dmypy_run_args": [],
             }
         }
     }
@@ -153,15 +155,19 @@ def pylsp_lint(
         args.extend(["--incremental", "--follow-imports", "silent"])
         logger.info(f"executing mypy args = {args}")
 
-        report, errors, _ = mypy_api.run(args)
+        report, errors, exit_status = mypy_api.run(args)
     else:
-        args = ["run", "--"] + args
+        dmypy_args = settings["dmypy_args"]
+        dmypy_run_args = settings["dmypy_run_args"]
+        args = [*dmypy_args, "run", *dmypy_run_args, "--", *args]
         logger.info(f"executing dmypy args = {args}")
 
-        report, errors, _ = mypy_api.run_dmypy(args)
+        report, errors, exit_status = mypy_api.run_dmypy(args)
 
-    logger.debug("report:\n%s", report)
-    logger.debug("errors:\n%s", errors)
+    logger.debug(f"report:\n{report}")
+    if errors:
+        logger.warning(f"errors:\n{errors}")
+        logger.warning(f"exit_status: {exit_status}")
 
     last_diags = []
     for line in report.splitlines():
