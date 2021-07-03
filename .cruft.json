@@ -1,6 +1,6 @@
 {
   "template": "/Users/gjeusel/src/soft-cookiecutter",
-  "commit": "10101b81b2b3bc6b600afe0c6814fc9a55c9005d",
+  "commit": "a28a3372ed242bcaa8f9381f89d852a6773741eb",
   "checkout": null,
   "context": {
     "cookiecutter": {
@@ -9,6 +9,7 @@
       "project_slug": "pylsp_mypy_rnx",
       "project_short_description": "mypy-ls fork",
       "mkdocs": "no",
+      "dockerfile": "yes",
       "tool": "poetry",
       "open_source_license": "MIT license",
       "_template": "/Users/gjeusel/src/soft-cookiecutter"
