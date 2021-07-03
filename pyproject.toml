@@ -1,13 +1,14 @@
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.poetry-version-plugin]  # https://github.com/tiangolo/poetry-version-plugin
-source = "init"
+[tool.poetry-dynamic-versioning]
+enable = true
+bump = true
 
 [tool.poetry]
 name = "pylsp-mypy-rnx"
-version = "0"  # https://github.com/tiangolo/poetry-version-plugin#version-in-pyprojecttoml
+version = "0.0.0"  # https://github.com/mtkennerly/poetry-dynamic-versioning
 description = "mypy-ls fork for more options"
 authors = ["Guillaume Jeusel <guillaume.jeusel@gmail.com>"]
 license = "MIT"
