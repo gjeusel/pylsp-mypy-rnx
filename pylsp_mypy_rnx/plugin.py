@@ -100,8 +100,6 @@ def pylsp_settings(config: Config) -> Dict[str, Any]:
                 "live_mode": True,
                 "args": [],
                 "dmypy": False,
-                "dmypy_args": [],
-                "dmypy_run_args": [],
             }
         }
     }
@@ -153,7 +151,7 @@ def pylsp_lint(
 
     if not dmypy:
         args.extend(["--incremental", "--follow-imports", "silent"])
-        logger.info(f"executing mypy args = {args}")
+        logger.info(f"executing: 'mypy {' '.join(args)}")
 
         report, errors, exit_status = mypy_api.run(args)
     else:
@@ -169,7 +167,7 @@ def pylsp_lint(
             mypy_api.run_dmypy(["kill"])
 
         args = ["run", "--", *args]
-        logger.info(f"executing dmypy args = {args}")
+        logger.info(f"executing: 'dmypy {' '.join(args)}'")
         report, errors, exit_status = mypy_api.run_dmypy(args)
 
     logger.debug(f"report:\n{report}")
