@@ -157,11 +157,19 @@ def pylsp_lint(
 
         report, errors, exit_status = mypy_api.run(args)
     else:
-        dmypy_args = settings["dmypy_args"]
-        dmypy_run_args = settings["dmypy_run_args"]
-        args = [*dmypy_args, "run", *dmypy_run_args, "--", *args]
-        logger.info(f"executing dmypy args = {args}")
+        # If dmypy daemon is non-responsive calls to run will block.
+        # Check daemon status, if non-zero daemon is dead or hung.
+        # If daemon is hung, kill will reset
+        # If daemon is dead/absent, kill will no-op.
+        # In either case, reset to fresh state
+        _, _err, _status = mypy_api.run_dmypy(["status"])
+        if _status != 0:
+            logger.info(_err)
+            logger.info(f"restarting dmypy from status: {_status}")
+            mypy_api.run_dmypy(["kill"])
 
+        args = ["run", "--", *args]
+        logger.info(f"executing dmypy args = {args}")
         report, errors, exit_status = mypy_api.run_dmypy(args)
 
     logger.debug(f"report:\n{report}")
