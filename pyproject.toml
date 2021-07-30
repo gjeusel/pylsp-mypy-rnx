@@ -76,7 +76,6 @@ profile = "black"
 
 [tool.black]
 line-length = 88
-target_version = ['py39']
 include = '\.pyi?$'
 exclude = '''
 (
