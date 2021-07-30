@@ -182,8 +182,9 @@ def pylsp_lint(
             args.extend(["--shadow-file", document.path, State.livemode_tmpfile.name])
 
     if not dmypy:
-        logger.info(f"executing: 'mypy {' '.join(args)}")
-        report, errors, exit_status = mypy_api.run(args)
+        cmd = [*args, document.path]
+        logger.info(f"executing: 'mypy {' '.join(cmd)}")
+        report, errors, exit_status = mypy_api.run(cmd)
         return parse_run(document, report, errors, exit_status)
 
     daemon_args = ["--status-file", State.dmypy_status_file.name]
