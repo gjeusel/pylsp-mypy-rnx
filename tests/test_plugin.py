@@ -41,8 +41,6 @@ def test_settings():
             "pylsp_mypy_rnx": {
                 "args": [],
                 "dmypy": False,
-                "dmypy_args": [],
-                "dmypy_run_args": [],
                 "enabled": True,
                 "live_mode": True,
             }

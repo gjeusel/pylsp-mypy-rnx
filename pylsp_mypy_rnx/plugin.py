@@ -19,18 +19,23 @@ line_pattern = re.compile(r"((?:^[a-z]:)?[^:]+):(?:(\d+):)?(?:(\d+):)? (\w+): (.
 logger = logging.getLogger(__name__)
 logger.info(f"Using mypy located at: {mypy.__file__}")
 
-mypy_config_file: Optional[str] = None
 
-map_document_tmpfile: Dict[str, IO[str]] = collections.defaultdict(
-    lambda: NamedTemporaryFile("w", delete=False)
-)
+class State:
+    initialized: bool = False
 
-# In non-live-mode the file contents aren't updated.
-# Returning an empty diagnostic clears the diagnostic result,
-# so store a cache of last diagnostics for each file a-la the pylint plugin,
-# so we can return some potentially-stale diagnostics.
-# https://github.com/python-lsp/python-lsp-server/blob/v1.0.1/pylsp/plugins/pylint_lint.py#L55-L62
-last_diagnostics: Dict[str, List[Any]] = collections.defaultdict(list)
+    mypy_config_file: Optional[str] = None
+
+    dmypy_daemon_status: Optional[int] = None
+
+    livemode_tmpfile: IO[str] = NamedTemporaryFile("w", delete=False)
+    dmypy_status_file: IO[str] = NamedTemporaryFile("w", delete=False)
+
+    # In non-live-mode the file contents aren't updated.
+    # Returning an empty diagnostic clears the diagnostic result,
+    # so store a cache of last diagnostics for each file a-la the pylint plugin,
+    # so we can return some potentially-stale diagnostics.
+    # https://github.com/python-lsp/python-lsp-server/blob/v1.0.1/pylsp/plugins/pylint_lint.py#L55-L62
+    last_diagnostics: Dict[str, List[Any]] = collections.defaultdict(list)
 
 
 def parse_line(
@@ -79,20 +84,24 @@ def parse_line(
     return diag
 
 
+def _ensure_finding_config_file(config: Config) -> None:
+    # Check for mypy config file to be used
+    if State.mypy_config_file:
+        return
+
+    workspace = config._root_path
+    logger.info(f"Searching for mypy config file from {workspace}")
+    for filepath in MYPY_CONFIG_FILES:
+        location = os.path.join(workspace, filepath)
+        if os.path.isfile(location):
+            State.mypy_config_file = location
+            logger.info(f"Found mypy config file at {State.mypy_config_file}")
+            break
+
+
 @hookimpl
 def pylsp_settings(config: Config) -> Dict[str, Any]:
-    # Check for mypy config file to be used
-    global mypy_config_file
-    if not mypy_config_file:
-        workspace = config._root_path
-        logger.info(f"Searching for mypy config file from {workspace}")
-        for filepath in MYPY_CONFIG_FILES:
-            location = os.path.join(workspace, filepath)
-            if os.path.isfile(location):
-                mypy_config_file = location
-                logger.info(f"Found mypy config file at {mypy_config_file}")
-                break
-
+    _ensure_finding_config_file(config)
     return {
         "plugins": {
             "pylsp_mypy_rnx": {
@@ -105,71 +114,9 @@ def pylsp_settings(config: Config) -> Dict[str, Any]:
     }
 
 
-@hookimpl
-def pylsp_lint(
-    workspace: Workspace, document: Document, is_saved: bool
+def parse_run(
+    document: Document, report: str, errors: str, exit_status: int
 ) -> List[Dict[str, Any]]:
-    config = workspace._config
-    settings = config.plugin_settings("pylsp_mypy_rnx", document_path=document.path)
-    logger.info(f"lint settings: {settings}")
-    logger.info(f"document.path = {document.path}")
-
-    live_mode = settings["live_mode"]
-    dmypy = settings["dmypy"]
-
-    if dmypy and live_mode:
-        # dmypy can only be efficiently run on files that have been saved, see:
-        # https://github.com/python/mypy/issues/9309
-        logger.warning("live_mode is not supported with dmypy, disabling")
-        live_mode = False
-
-    args = settings["args"]
-    args = [*args, "--show-column-numbers"]
-
-    if not is_saved:
-        if live_mode:
-            tmpfile = map_document_tmpfile[document.source]
-            logger.info(f"live_mode with tmpfile = {tmpfile.name}")
-            with open(tmpfile.name, "w") as f:
-                f.write(document.source)
-
-            args.extend(["--shadow-file", document.path, tmpfile.name])
-
-        elif document.path in last_diagnostics:
-            # On-launch the document isn't marked as saved, so fall through and run
-            # the diagnostics anyway even if the file contents may be out of date.
-            last_diags = last_diagnostics[document.path]
-            msg = f"non-live, returning cached diagnostics ({len(last_diags)})"
-            logger.info(msg)
-            return last_diags
-
-    if mypy_config_file:
-        args.append("--config-file")
-        args.append(mypy_config_file)
-
-    args.append(document.path)
-
-    if not dmypy:
-        args.extend(["--incremental", "--follow-imports", "silent"])
-        logger.info(f"executing: 'mypy {' '.join(args)}")
-
-        report, errors, exit_status = mypy_api.run(args)
-    else:
-        # If dmypy daemon is non-responsive calls to run will block.
-        # Check daemon status, if non-zero daemon is dead or hung.
-        # If daemon is hung, kill will reset
-        # If daemon is dead/absent, kill will no-op.
-        # In either case, reset to fresh state
-        _, _err, _status = mypy_api.run_dmypy(["status"])
-        if _status != 0:
-            logger.info(_err)
-            logger.info(f"restarting dmypy from status: {_status}")
-            mypy_api.run_dmypy(["kill"])
-
-        args = ["run", "--", *args]
-        logger.info(f"executing: 'dmypy {' '.join(args)}'")
-        report, errors, exit_status = mypy_api.run_dmypy(args)
-
     logger.debug(f"report:\n{report}")
     if errors:
         logger.warning(f"errors:\n{errors}")
@@ -184,12 +131,85 @@ def pylsp_lint(
 
     logger.info("pylsp_mypy_rnx len(diagnostics) = %s", len(last_diags))
 
-    last_diagnostics[document.path] = last_diags
+    State.last_diagnostics[document.path] = last_diags
     return last_diags
+
+
+@hookimpl
+def pylsp_lint(
+    workspace: Workspace, document: Document, is_saved: bool
+) -> List[Dict[str, Any]]:
+    config = workspace._config
+    settings = config.plugin_settings("pylsp_mypy_rnx", document_path=document.path)
+
+    if not State.initialized:
+        logger.info(f"lint settings: {settings}")
+        logger.info(f"document.path: {document.path}")
+        State.initialized = True
+
+    live_mode = settings["live_mode"]
+    dmypy = settings["dmypy"]
+
+    if dmypy and live_mode:
+        # dmypy can only be efficiently run on files that have been saved, see:
+        # https://github.com/python/mypy/issues/9309
+        logger.warning("live_mode is not supported with dmypy, disabling")
+        live_mode = False
+
+    args = settings["args"]
+    args = [
+        *args,
+        "--show-column-numbers",
+        "--follow-imports",
+        "normal",
+        "--incremental",
+    ]
+    if State.mypy_config_file:
+        args.extend(["--config-file", State.mypy_config_file])
+
+    if not is_saved:
+        if not live_mode:  # Early return in case of not saved and not live-mode
+            last_diags = State.last_diagnostics.get(document.path, [])
+            msg = f"non-live, returning cached diagnostics ({len(last_diags)})"
+            logger.debug(msg)
+            return last_diags
+
+        else:
+            # use shadow file in live-mode
+            logger.info(f"live_mode with tmpfile: {State.livemode_tmpfile.name}")
+            with open(State.livemode_tmpfile.name, "w") as f:
+                f.write(document.source)
+            args.extend(["--shadow-file", document.path, State.livemode_tmpfile.name])
+
+    if not dmypy:
+        cmd = [*args, document.path]
+        logger.info(f"executing: 'mypy {' '.join(cmd)}")
+        report, errors, exit_status = mypy_api.run(cmd)
+        return parse_run(document, report, errors, exit_status)
+
+    daemon_args = ["--status-file", State.dmypy_status_file.name]
+
+    if State.dmypy_daemon_status is None:
+        msg = f"dmypy - status file can be found at {State.dmypy_status_file.name}"
+        logger.info(msg)
+
+        cmd = [*daemon_args, "start", "--", *args, document.path]
+        logger.info(f"starting dmypy: 'dmypy {' '.join(cmd)}'")
+        _, errors, State.dmypy_daemon_status = mypy_api.run_dmypy(cmd)
+        if State.dmypy_daemon_status != 0:
+            logger.warning(errors)
+
+    logger.info("Running dmypy checks...")
+    cmd = [*daemon_args, "check", document.path]
+    report, errors, exit_status = mypy_api.run_dmypy(cmd)
+
+    return parse_run(document, report, errors, exit_status)
 
 
 @atexit.register
 def close() -> None:
-    """Deltes the tempFile should it exist."""
-    for _, tmpfile in map_document_tmpfile.items():
-        os.unlink(tmpfile.name)
+    # if State.dmypy_status_file:
+    #     mypy_api.run_dmypy(["kill"])
+
+    if State.livemode_tmpfile:
+        os.unlink(State.livemode_tmpfile.name)  # cleanup tmpfile
