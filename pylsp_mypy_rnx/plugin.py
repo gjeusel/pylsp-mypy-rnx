@@ -16,7 +16,7 @@ from pylsp.workspace import Document, Workspace
 
 line_pattern = re.compile(r"((?:^[a-z]:)?[^:]+):(?:(\d+):)?(?:(\d+):)? (\w+): (.*)")
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("pylsp.plugins.mypy_rnx")
 logger.info(f"Using mypy located at: {mypy.__file__}")
 
 
@@ -109,6 +109,7 @@ def pylsp_settings(config: Config) -> Dict[str, Any]:
                 "live_mode": True,
                 "args": [],
                 "dmypy": False,
+                "daemon_args": {},
             }
         }
     }
@@ -193,14 +194,24 @@ def pylsp_lint(
         msg = f"dmypy - status file can be found at {State.dmypy_status_file.name}"
         logger.info(msg)
 
-        cmd = [*daemon_args, "start", "--", *args, document.path]
+        daemon_args_start = [
+            *daemon_args,
+            "start",
+            *(settings.get("daemon_args", {}).get("start", [])),
+        ]
+        cmd = [*daemon_args_start, "--", *args, document.path]
         logger.info(f"starting dmypy: 'dmypy {' '.join(cmd)}'")
         _, errors, State.dmypy_daemon_status = mypy_api.run_dmypy(cmd)
         if State.dmypy_daemon_status != 0:
             logger.warning(errors)
 
-    logger.info("Running dmypy checks...")
-    cmd = [*daemon_args, "check", document.path]
+    daemon_args_check = [
+        *daemon_args,
+        "check",
+        *(settings.get("daemon_args", {}).get("check", [])),
+    ]
+    cmd = [*daemon_args_check, document.path]
+    logger.info(f"running dmypy cmd: 'dmypy {' '.join(cmd)}")
     report, errors, exit_status = mypy_api.run_dmypy(cmd)
 
     return parse_run(document, report, errors, exit_status)
