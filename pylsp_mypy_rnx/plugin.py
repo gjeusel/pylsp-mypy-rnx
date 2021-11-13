@@ -4,7 +4,8 @@ import logging
 import os
 import os.path
 import re
-from tempfile import NamedTemporaryFile
+from pathlib import Path
+from tempfile import NamedTemporaryFile, gettempdir
 from typing import IO, Any, Dict, List, Optional
 
 import mypy
@@ -20,15 +21,24 @@ logger = logging.getLogger("pylsp.plugins.mypy_rnx")
 logger.info(f"Using mypy located at: {mypy.__file__}")
 
 
+def _get_dmypy_status_filepath() -> Path:
+    tmpdir = Path(gettempdir())
+    unique_mypy_path_per_python_exec = Path(mypy.__file__).parent.relative_to(
+        Path.home()
+    )
+
+    dmypy_status_dirpath = tmpdir / unique_mypy_path_per_python_exec
+    if not dmypy_status_dirpath.exists():
+        dmypy_status_dirpath.mkdir(parents=True)
+
+    return dmypy_status_dirpath / "dmypy-status.json"
+
+
 class State:
     initialized: bool = False
-
     mypy_config_file: Optional[str] = None
 
-    dmypy_daemon_status: Optional[int] = None
-
     livemode_tmpfile: IO[str] = NamedTemporaryFile("w", delete=False)
-    dmypy_status_file: IO[str] = NamedTemporaryFile("w", delete=False)
 
     # In non-live-mode the file contents aren't updated.
     # Returning an empty diagnostic clears the diagnostic result,
@@ -36,6 +46,10 @@ class State:
     # so we can return some potentially-stale diagnostics.
     # https://github.com/python-lsp/python-lsp-server/blob/v1.0.1/pylsp/plugins/pylint_lint.py#L55-L62
     last_diagnostics: Dict[str, List[Any]] = collections.defaultdict(list)
+
+    # dmypy stuff (keep one state file per mypy executable):
+    dmypy_daemon_status: Optional[int] = None
+    dmypy_status_file: str = _get_dmypy_status_filepath().as_posix()
 
 
 def parse_line(
@@ -136,6 +150,10 @@ def parse_run(
     return last_diags
 
 
+def _to_dmypy_cmd(cmd: list[str]) -> str:
+    return f"'dmypy {' '.join(cmd)}'"
+
+
 @hookimpl
 def pylsp_lint(
     workspace: Workspace, document: Document, is_saved: bool
@@ -188,22 +206,33 @@ def pylsp_lint(
         report, errors, exit_status = mypy_api.run(cmd)
         return parse_run(document, report, errors, exit_status)
 
-    daemon_args = ["--status-file", State.dmypy_status_file.name]
+    daemon_args = ["--status-file", State.dmypy_status_file]
 
     if State.dmypy_daemon_status is None:
-        msg = f"dmypy - status file can be found at {State.dmypy_status_file.name}"
+        msg = f"dmypy - status file can be found at {State.dmypy_status_file}"
         logger.info(msg)
 
-        daemon_args_start = [
-            *daemon_args,
-            "start",
-            *(settings.get("daemon_args", {}).get("start", [])),
-        ]
-        cmd = [*daemon_args_start, "--", *args, document.path]
-        logger.info(f"starting dmypy: 'dmypy {' '.join(cmd)}'")
-        _, errors, State.dmypy_daemon_status = mypy_api.run_dmypy(cmd)
-        if State.dmypy_daemon_status != 0:
-            logger.warning(errors)
+        # First check if no daemon already running
+        cmd = [*daemon_args, "status"]
+        logger.info(f"call dmypy status: {_to_dmypy_cmd(cmd)}")
+
+        result, errors, State.dmypy_daemon_status = mypy_api.run_dmypy(cmd)
+        if State.dmypy_daemon_status != 0:  # not yet up and running
+            logger.debug(errors)
+
+            daemon_args_start = [
+                *daemon_args,
+                "start",
+                *(settings.get("daemon_args", {}).get("start", [])),
+            ]
+            cmd = [*daemon_args_start, "--", *args, document.path]
+            logger.info(f"call dmypy start: {_to_dmypy_cmd(cmd)}")
+
+            _, errors, State.dmypy_daemon_status = mypy_api.run_dmypy(cmd)
+            if State.dmypy_daemon_status != 0:
+                logger.warning(errors)
+
+    logger.debug(f"current dmypy daemon status: {State.dmypy_daemon_status}")
 
     daemon_args_check = [
         *daemon_args,
@@ -211,7 +240,7 @@ def pylsp_lint(
         *(settings.get("daemon_args", {}).get("check", [])),
     ]
     cmd = [*daemon_args_check, document.path]
-    logger.info(f"running dmypy cmd: 'dmypy {' '.join(cmd)}")
+    logger.info(f"call dmypy check: {_to_dmypy_cmd(cmd)}")
     report, errors, exit_status = mypy_api.run_dmypy(cmd)
 
     return parse_run(document, report, errors, exit_status)
@@ -219,8 +248,11 @@ def pylsp_lint(
 
 @atexit.register
 def close() -> None:
-    # if State.dmypy_status_file:
-    #     mypy_api.run_dmypy(["kill"])
+    if State.dmypy_daemon_status is not None:
+        daemon_args = ["--status-file", State.dmypy_status_file]
+        cmd = [*daemon_args, "kill"]
+        logger.info(f"call dmypy kill: {_to_dmypy_cmd(cmd)}")
+        mypy_api.run_dmypy(cmd)
 
     if State.livemode_tmpfile:
         os.unlink(State.livemode_tmpfile.name)  # cleanup tmpfile
