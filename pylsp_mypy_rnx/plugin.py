@@ -150,7 +150,7 @@ def parse_run(
     return last_diags
 
 
-def _to_dmypy_cmd(cmd: list[str]) -> str:
+def _to_dmypy_cmd(cmd: List[str]) -> str:
     return f"'dmypy {' '.join(cmd)}'"
 
 

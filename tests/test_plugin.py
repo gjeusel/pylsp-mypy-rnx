@@ -40,6 +40,7 @@ def test_settings():
         "plugins": {
             "pylsp_mypy_rnx": {
                 "args": [],
+                "daemon_args": {},
                 "dmypy": False,
                 "enabled": True,
                 "live_mode": True,
